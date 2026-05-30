@@ -1,7 +1,0 @@
-fastapi
-uvicorn
-openai
-pydantic
-supabase
-python-dotenv
-pypdf
