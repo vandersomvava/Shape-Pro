@@ -5,3 +5,5 @@ pydantic
 supabase
 python-dotenv
 pypdf
+python-jose[cryptography]
+passlib[bcrypt]
