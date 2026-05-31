@@ -161,24 +161,34 @@ async def processar_chat(req: RequisicaoMensagem):
         for msg in historico_msgs:
             mensagens_ia.append({"role": msg.get("role", "user"), "content": msg.get("content", "")})
 
-        # 5. Executa a Inteligência Artificial com fallback de modelos
-        resposta_ia = ""
-        modelos_tentativa = ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"]
-        for modelo in modelos_tentativa:
-            try:
-                completion = openai_client.chat.completions.create(
-                    model=modelo,
-                    messages=mensagens_ia,
-                    temperature=0.7,
-                )
-                # compatibilidade com diferentes shapes de retorno
-                escolha = completion.choices[0]
-                resposta_ia = getattr(escolha.message, "content", None) or escolha.message["content"]
-                break
-            except OpenAIError:
-                continue
-            except Exception:
-                continue
+# 5. Executa a Inteligência Artificial com fallback de modelos
+resposta_ia = ""
+modelos_tentativa = ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"]
+
+for modelo in modelos_tentativa:
+    try:
+        print(f"Tentando modelo: {modelo}")
+
+        completion = openai_client.chat.completions.create(
+            model=modelo,
+            messages=mensagens_ia,
+            temperature=0.7,
+        )
+
+        escolha = completion.choices[0]
+        resposta_ia = escolha.message.content
+
+        print(f"Resposta recebida do modelo {modelo}")
+        break
+
+    except OpenAIError as e:
+        print(f"ERRO OPENAI ({modelo}): {e}")
+
+    except Exception as e:
+        print(f"ERRO GERAL ({modelo}): {e}")
+
+if not resposta_ia:
+    resposta_ia = "ERRO: Nenhum modelo da OpenAI conseguiu responder."
 
         # 6. Atualiza o status do fluxo se a IA deu o sinal verde
         if resposta_ia and "[STATUS: PRONTO_PARA_TREINO]" in resposta_ia:
