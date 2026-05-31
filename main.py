@@ -162,7 +162,8 @@ async def processar_chat(req: RequisicaoMensagem):
             mensagens_ia.append({"role": msg.get("role", "user"), "content": msg.get("content", "")})
 
 # 5. Executa a Inteligência Artificial com fallback de modelos
-resposta_ia = "TESTE FUNCIONANDO"
+resposta_ia = ""
+
 modelos_tentativa = ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"]
 
 for modelo in modelos_tentativa:
