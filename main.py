@@ -161,41 +161,35 @@ async def processar_chat(req: RequisicaoMensagem):
         for msg in historico_msgs:
             mensagens_ia.append({"role": msg.get("role", "user"), "content": msg.get("content", "")})
 
-        # 5. Executa a Inteligência Artificial com fallback de modelos
-resposta_ia = ""
+                # 5. Executa a Inteligência Artificial com fallback de modelos
+        resposta_ia = ""
 
-modelos_tentativa = ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"]
+        modelos_tentativa = ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"]
 
-for modelo in modelos_tentativa:
-    try:
-        print(f"Tentando modelo: {modelo}")
+        for modelo in modelos_tentativa:
+            try:
+                print(f"Tentando modelo: {modelo}")
 
-        completion = openai_client.chat.completions.create(
-            model=modelo,
-            messages=mensagens_ia,
-            temperature=0.7,
-        )
+                completion = openai_client.chat.completions.create(
+                    model=modelo,
+                    messages=mensagens_ia,
+                    temperature=0.7,
+                )
 
-        escolha = completion.choices[0]
-        resposta_ia = escolha.message.content
+                escolha = completion.choices[0]
+                resposta_ia = escolha.message.content
 
-        print(f"Resposta recebida do modelo {modelo}")
-        break
+                print(f"Resposta recebida do modelo {modelo}")
+                break
 
-    except OpenAIError as e:
-        erro = str(e)
+            except OpenAIError as e:
+                print(f"ERRO OPENAI ({modelo}): {e}")
 
-        if "insufficient_quota" in erro:
-            resposta_ia = "A API da OpenAI está sem créditos ou sem faturamento ativo."
-            break
+            except Exception as e:
+                print(f"ERRO GERAL ({modelo}): {e}")
 
-        print(f"ERRO OPENAI ({modelo}): {e}")
-
-    except Exception as e:
-        print(f"ERRO GERAL ({modelo}): {e}")
-
-if not resposta_ia:
-    resposta_ia = "ERRO: Nenhum modelo da OpenAI conseguiu responder."
+        if not resposta_ia:
+            resposta_ia = "ERRO: Nenhum modelo da OpenAI conseguiu responder."
 
         # 6. Atualiza o status do fluxo se a IA deu o sinal verde
         if resposta_ia and "[STATUS: PRONTO_PARA_TREINO]" in resposta_ia:
