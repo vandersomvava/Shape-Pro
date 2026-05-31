@@ -226,7 +226,7 @@ async def processar_chat(req: RequisicaoMensagem):
                 completion = openai_client.chat.completions.create(
                     model=modelo,
                     messages=mensagens_ia,
-                    temperature=0.7,
+                    temperature=0.2,
                 )
 
                 escolha = completion.choices[0]
