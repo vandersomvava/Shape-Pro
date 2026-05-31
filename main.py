@@ -1,8 +1,10 @@
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from datetime import datetime, timedelta
-from fastapi import Depends, Header, HTTPException
+from datetime import datetime, timedelta, timezone
+from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
+
+app = FastAPI()
 
 SECRET_KEY = "shapepro_secret_2026"
 ALGORITHM = "HS256"
@@ -25,7 +27,7 @@ def verificar_senha(plain: str, hashed: str):
 def criar_token(data: dict):
     to_encode = data.copy()
 
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
 
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
@@ -38,19 +40,85 @@ def verificar_token(authorization: str = Header(None)):
     try:
         token = authorization.replace("Bearer ", "")
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload["sub"]
+        return payload.get("sub")
 
     except JWTError:
         raise HTTPException(status_code=401, detail="Token inválido")
 
 
 # =========================
-# MODELO
+# MODELOS
 # =========================
+
+class CadastroRequest(BaseModel):
+    nome: str
+    email: str
+    senha: str
+
 
 class LoginRequest(BaseModel):
     email: str
     senha: str
+
+
+# =========================
+# ROTAS
+# =========================
+
+@app.post("/api/v1/auth/cadastro")
+async def cadastrar_profissional(req: CadastroRequest):
+
+    existente = supabase_client.table("profissionais") \
+        .select("id") \
+        .eq("email", req.email) \
+        .execute()
+
+    if existente.data:
+        raise HTTPException(status_code=400, detail="E-mail já cadastrado.")
+
+    senha_cripto = gerar_hash(req.senha)
+
+    novo_prof = supabase_client.table("profissionais").insert({
+        "nome": req.nome,
+        "email": req.email,
+        "senha_hash": senha_cripto
+    }).execute()
+
+    return {
+        "mensagem": "Cadastro realizado com sucesso!",
+        "profissional_id": novo_prof.data[0]["id"]
+    }
+
+
+@app.post("/api/v1/auth/login")
+async def login_profissional(req: LoginRequest):
+
+    prof = supabase_client.table("profissionais") \
+        .select("*") \
+        .eq("email", req.email) \
+        .execute()
+
+    if not prof.data:
+        raise HTTPException(status_code=401, detail="E-mail ou senha incorretos.")
+
+    profissional = prof.data[0]
+
+    if not verificar_senha(req.senha, profissional["senha_hash"]):
+        raise HTTPException(status_code=401, detail="E-mail ou senha incorretos.")
+
+    token = criar_token({
+        "sub": str(profissional["id"]),
+        "email": profissional["email"]
+    })
+
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "profissional": {
+            "nome": profissional["nome"],
+            "plano": profissional.get("plano", "Basico")
+        }
+    }
 import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
