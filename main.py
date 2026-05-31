@@ -1,16 +1,26 @@
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
+
 SECRET_KEY = "shapepro_secret_2026"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-def gerar_hash(senha):
+
+# =========================
+# FUNÇÕES DE AUTENTICAÇÃO
+# =========================
+
+def gerar_hash(senha: str):
     return pwd_context.hash(senha)
-    def verificar_senha(plain, hashed):
+
+
+def verificar_senha(plain: str, hashed: str):
     return pwd_context.verify(plain, hashed)
-    def criar_token(data: dict):
+
+
+def criar_token(data: dict):
     to_encode = data.copy()
 
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
