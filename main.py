@@ -46,6 +46,24 @@ def verificar_token(authorization: str = Header(None)):
         raise HTTPException(status_code=401, detail="Token inválido")
 
 
+import os
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List, Optional
+import socket
+from openai import OpenAI, OpenAIError
+from supabase import create_client, Client
+from dotenv import load_dotenv
+try:
+    from postgrest.exceptions import APIError
+except Exception:
+    APIError = Exception
+
+load_dotenv()
+
+app = FastAPI(title="ShapePro AI Engine - Versão Científica")
+
 # =========================
 # MODELOS
 # =========================
@@ -119,24 +137,6 @@ async def login_profissional(req: LoginRequest):
             "plano": profissional.get("plano", "Basico")
         }
     }
-import os
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import List, Optional
-import socket
-from openai import OpenAI, OpenAIError
-from supabase import create_client, Client
-from dotenv import load_dotenv
-try:
-    from postgrest.exceptions import APIError
-except Exception:
-    APIError = Exception
-
-load_dotenv()
-
-app = FastAPI(title="ShapePro AI Engine - Versão Científica")
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -327,31 +327,44 @@ async def processar_chat(req: RequisicaoMensagem):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Certifique-se de importar o Depends no topo do arquivo caso não esteja: de fastapi import Depends
 @app.post("/api/v1/alunos")
-async def criar_aluno(aluno: CriarAluno):
+async def criar_aluno(aluno: CriarAluno, profissional_id: str = Depends(verificar_token)):
     try:
         if not supabase_client:
             raise HTTPException(status_code=400, detail="SUPABASE_URL and SUPABASE_KEY are not configured")
+        
+        # 1. Verifica se o aluno já existe
         resp = supabase_client.table("perfis_alunos").select("id").eq("id", aluno.id).execute()
         if resp and getattr(resp, "data", None):
             return {"id": aluno.id, "created": False}
-        # Ensure the referenced user exists first
-        ensure_user_exists(aluno.id)
+        
+        # 2. [Opcional] Se você removeu a foreign key rígida do auth.users, pode comentar a linha abaixo:
+        # ensure_user_exists(aluno.id)
+        
+        # 3. Insere o aluno vinculando-o diretamente ao ID do profissional logado!
         try:
-            supabase_client.table("perfis_alunos").insert({"id": aluno.id, "nome": aluno.nome or "", "status_fluxo": "ANAMNESE"}).execute()
+            supabase_client.table("perfis_alunos").insert({
+                "id": aluno.id, 
+                "nome": aluno.nome or "", 
+                "status_fluxo": "ANAMNESE",
+                "profissional_id": profissional_id  # <--- Vinculação mágica aqui!
+            }).execute()
         except Exception as e:
             msg = str(e)
             if 'foreign key' in msg or 'violates foreign key constraint' in msg:
-                raise HTTPException(status_code=500, detail=("Foreign key constraint prevents creating perfil. "
-                                                           "Ensure a corresponding user row exists in your DB or adjust the schema."))
+                raise HTTPException(status_code=500, detail=(
+                    "Erro de Chave Estrangeira. Garanta que a coluna profissional_id "
+                    "está criada corretamente no Supabase."
+                ))
             raise
-        return {"id": aluno.id, "created": True}
+            
+        return {"id": aluno.id, "created": True, "profissional_id": profissional_id}
+        
     except HTTPException:
         raise
     except Exception as e:
-        # detecta falha de resolução de nome de host (getaddrinfo) em mensagens de erro encadeadas
         msg = str(e)
         if 'getaddrinfo' in msg or 'Name or service not known' in msg:
             raise HTTPException(status_code=400, detail="Could not resolve Supabase host. Check SUPABASE_URL.")
-        # fallback: mensagens genéricas
         raise HTTPException(status_code=500, detail=msg)
