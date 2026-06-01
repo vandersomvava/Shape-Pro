@@ -1,7 +1,8 @@
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from datetime import datetime, timedelta, timezone
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Depends
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 
 app = FastAPI()
@@ -11,6 +12,9 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# Configuração que faz o botão "Authorize" aparecer no Swagger
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 # =========================
 # AUTH SYSTEM
@@ -33,15 +37,10 @@ def criar_token(data: dict):
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def verificar_token(authorization: str = Header(None)):
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Token ausente")
-
+def verificar_token(token: str = Depends(oauth2_scheme)):
     try:
-        token = authorization.replace("Bearer ", "")
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload.get("sub")
-
     except JWTError:
         raise HTTPException(status_code=401, detail="Token inválido")
 
@@ -107,36 +106,39 @@ async def cadastrar_profissional(req: CadastroRequest):
         "profissional_id": novo_prof.data[0]["id"]
     }
 
-
 @app.post("/api/v1/auth/login")
-async def login_profissional(req: LoginRequest):
+async def login_profissional(req: OAuth2PasswordRequestForm = Depends()):
+    try:
+        # No formulário do FastAPI, o campo do e-mail vira 'req.username'
+        prof = supabase_client.table("profissionais") \
+            .select("*") \
+            .eq("email", req.username) \
+            .execute()
 
-    prof = supabase_client.table("profissionais") \
-        .select("*") \
-        .eq("email", req.email) \
-        .execute()
+        if not prof.data:
+            raise HTTPException(status_code=401, detail="E-mail ou senha incorretos.")
 
-    if not prof.data:
-        raise HTTPException(status_code=401, detail="E-mail ou senha incorretos.")
+        profissional = prof.data[0]
 
-    profissional = prof.data[0]
+        # No formulário do FastAPI, o campo da senha vira 'req.password'
+        if not verificar_senha(req.password, profissional["senha_hash"]):
+            raise HTTPException(status_code=401, detail="E-mail ou senha incorretos.")
 
-    if not verificar_senha(req.senha, profissional["senha_hash"]):
-        raise HTTPException(status_code=401, detail="E-mail ou senha incorretos.")
+        token = criar_token({
+            "sub": str(profissional["id"]),
+            "email": profissional["email"]
+        })
 
-    token = criar_token({
-        "sub": str(profissional["id"]),
-        "email": profissional["email"]
-    })
-
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-        "profissional": {
-            "nome": profissional["nome"],
-            "plano": profissional.get("plano", "Basico")
+        return {
+            "access_token": token,
+            "token_type": "bearer",
+            "profissional": {
+                "nome": profissional["nome"],
+                "plano": profissional.get("plano", "Basico")
+            }
         }
-    }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -284,7 +286,6 @@ async def processar_chat(req: RequisicaoMensagem):
 
                 # 5. Executa a Inteligência Artificial com fallback de modelos
         resposta_ia = ""
-
         modelos_tentativa = ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"]
 
         for modelo in modelos_tentativa:
